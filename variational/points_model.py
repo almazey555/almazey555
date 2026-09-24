@@ -14,8 +14,10 @@ AIRDROP_SHARE = 0.32          # Genesis Distribution, 100% unlocked at TGE
 RETRO_POINTS = 3_000_000      # retro drop at program launch (Dec 17, 2025)
 WEEKLY_POINTS = 150_000       # weekly drop, every Friday 00:00 UTC
 FIRST_WEEKLY = date(2025, 12, 19)  # week 1 distribution (week 6 = Jan 23, 2026)
-EXTRA_POINTS = 150_000        # On-Chain Trader Rewards campaign cap (since Aug 12, 2026);
-                              # referral bonus may add more on top - unknown
+# Referral bonus (+1 pt per 10 pts earned by referrals) and campaigns (On-Chain
+# Trader Rewards, cap 150k) sit on top of the nominal 3M + 150k/week. Calibrated to
+# ~9.55M total for a program ending with the Oct 2 drop (end of Q3, 42 weeks).
+POINTS_MULT = 9.55e6 / (RETRO_POINTS + 42 * WEEKLY_POINTS)
 
 # Day-1 FDV scenarios (USD) and subjective probabilities
 SCENARIOS = [
@@ -40,10 +42,10 @@ COMPS = [
 
 # TGE timing scenarios: last weekly drop before TGE
 TGE_DATES = [
-    ("Late Oct 2026",  date(2026, 10, 30), 0.15),
-    ("Mid Nov 2026",   date(2026, 11, 13), 0.20),
-    ("Early Dec 2026", date(2026, 12, 4),  0.30),
-    ("Late Dec 2026",  date(2026, 12, 25), 0.15),
+    ("Late Oct 2026",  date(2026, 10, 30), 0.05),
+    ("Mid Nov 2026",   date(2026, 11, 13), 0.15),
+    ("Mid Dec 2026",   date(2026, 12, 18), 0.35),  # ~1y after points launch (Dec 17, 2025)
+    ("Late Dec 2026",  date(2026, 12, 25), 0.25),  # Lighter-style (LIT TGE Dec 30, 2025)
     ("Slip: Feb 2027", date(2027, 2, 26),  0.20),
 ]
 
@@ -55,8 +57,8 @@ def weeks_through(d: date) -> int:
     return (d - FIRST_WEEKLY).days // 7 + 1
 
 
-def total_points(last_drop: date, extras: float = EXTRA_POINTS) -> float:
-    return RETRO_POINTS + weeks_through(last_drop) * WEEKLY_POINTS + extras
+def total_points(last_drop: date) -> float:
+    return (RETRO_POINTS + weeks_through(last_drop) * WEEKLY_POINTS) * POINTS_MULT
 
 
 def value_per_point(fdv: float, points: float) -> float:
@@ -73,12 +75,13 @@ def main() -> None:
     args = ap.parse_args()
 
     today = date(2026, 9, 24)
-    now_pts = total_points(today, extras=0)
+    now_pts = total_points(today)
     print(f"Weekly drops so far (as of {today}): {weeks_through(today)}")
-    print(f"Points issued so far (retro + weekly, no extras): {now_pts/1e6:.2f}M")
-    print(f"After Fri Sep 25 drop: {total_points(date(2026, 9, 25), 0)/1e6:.2f}M\n")
+    print(f"Points issued so far (incl. referral/campaign x{POINTS_MULT:.3f}): {now_pts/1e6:.2f}M")
+    print(f"End of Q3 (Oct 2 drop): {total_points(date(2026, 10, 2))/1e6:.2f}M;"
+          f" effective weekly emission ~{WEEKLY_POINTS * POINTS_MULT/1e3:.0f}k\n")
 
-    print("TGE timing -> total points at TGE (incl. ~150k campaign extras)")
+    print("TGE timing -> total points at TGE")
     exp_pts = 0.0
     for name, d, p in TGE_DATES:
         tp = total_points(d)
@@ -88,7 +91,15 @@ def main() -> None:
               f"  (holder who stops now keeps {dil:5.1%} of current share)  p={p:.0%}")
     print(f"  Probability-weighted total points: {exp_pts/1e6:.2f}M\n")
 
-    pts_grid = [9.5e6, 10.0e6, 10.5e6, 11.0e6, 11.5e6, 12.5e6]
+    eoq3 = total_points(date(2026, 10, 2))
+    print("Announcement effect vs pre-announcement expectation (TGE right after Q3):")
+    for exp_share in (0.20, 0.25):
+        for name, d, _ in TGE_DATES:
+            ratio = (AIRDROP_SHARE / total_points(d)) / (exp_share / eoq3)
+            print(f"  expected {exp_share:.0%} airdrop, TGE {name:15s}: value/pt x{ratio:.2f}")
+    print()
+
+    pts_grid = [10.0e6, 10.5e6, 11.0e6, 11.5e6, 12.0e6, 13.0e6]
     print("USD per point  (rows: day-1 FDV, cols: total points at TGE)")
     print("  FDV      " + "".join(f"{p/1e6:>8.1f}M" for p in pts_grid))
     for fdv in [300e6, 500e6, 800e6, 1_000e6, 1_300e6, 1_500e6, 2_000e6, 3_000e6, 5_000e6]:
