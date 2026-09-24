@@ -19,11 +19,23 @@ EXTRA_POINTS = 150_000        # On-Chain Trader Rewards campaign cap (since Aug 
 
 # Day-1 FDV scenarios (USD) and subjective probabilities
 SCENARIOS = [
-    ("Bear",        500e6, 0.20),
-    ("Conservative", 800e6, 0.25),
-    ("Base",       1_300e6, 0.30),
-    ("Bull",       2_200e6, 0.18),
-    ("Euphoria",   4_000e6, 0.07),
+    ("Bear",         600e6, 0.15),   # edgeX/GRVT-like FDV/OI ~0.4-1x
+    ("Conservative", 1_000e6, 0.25),
+    ("Base",       1_500e6, 0.30),   # ~Polymarket median, ~1.7x OI
+    ("Bull",       2_800e6, 0.22),   # ~3-4x OI (Aster-like)
+    ("Euphoria",   5_000e6, 0.08),   # ~6x OI (Lighter-like)
+]
+
+# DefiLlama perp snapshot 2026-09-24: (OI, 30d volume, current FDV)
+VARIATIONAL_OI = 878.25e6
+VARIATIONAL_VOL_7D = 18.168e9
+VARIATIONAL_VOL_30D = 48.157e9
+COMPS = [
+    ("Hyperliquid", 9.06e9,   219.983e9, 89e9),
+    ("Aster",       1.411e9,  69.11e9,   5.6e9),
+    ("Lighter",     835.86e6, 54.476e9,  5.16e9),
+    ("edgeX",       618.36e6, 40.764e9,  0.61e9),
+    ("Grvt",        471.1e6,  14.642e9,  0.19e9),
 ]
 
 # TGE timing scenarios: last weekly drop before TGE
@@ -99,16 +111,30 @@ def main() -> None:
             print(f"  Median scenario: {name} (${value_per_point(fdv, base_pts):.1f}/pt)\n")
             break
 
-    # Rough farming-cost estimate if points were purely volume-proportional
-    # 30d volume snapshots in sources range $16-48B; 2026 average ~$28B ($240B Jan 1-Sep 18).
-    # Effective spread paid per $ of volume: ~1.5-3 bps (4-6 bps quoted spread, half per side).
-    for vol_30d in (20e9, 28e9, 48e9):
-        weekly_vol = vol_30d / 30 * 7
+    print("Comparables: FDV/OI and FDV/30d volume -> implied Variational FDV")
+    geo_oi, geo_vol, n = 1.0, 1.0, 0
+    for name, oi, vol, fdv in COMPS:
+        m_oi, m_vol = fdv / oi, fdv / vol
+        print(f"  {name:12s} FDV ${fdv/1e9:5.2f}B  FDV/OI {m_oi:5.2f}x -> ${m_oi*VARIATIONAL_OI/1e9:5.2f}B"
+              f"   FDV/vol30d {m_vol:.3f} -> ${m_vol*VARIATIONAL_VOL_30D/1e9:5.2f}B")
+        if name != "Hyperliquid":
+            geo_oi *= m_oi
+            geo_vol *= m_vol
+            n += 1
+    geo_oi, geo_vol = geo_oi ** (1 / n), geo_vol ** (1 / n)
+    print(f"  Geometric mean ex-HL: FDV/OI {geo_oi:.2f}x -> ${geo_oi*VARIATIONAL_OI/1e9:.2f}B;"
+          f" FDV/vol {geo_vol:.3f} -> ${geo_vol*VARIATIONAL_VOL_30D/1e9:.2f}B")
+    print(f"  Variational vol30d/OI = {VARIATIONAL_VOL_30D/VARIATIONAL_OI:.0f}x"
+          f" (Hyperliquid {COMPS[0][2]/COMPS[0][1]:.0f}x)\n")
+
+    # Rough farming-cost estimate if points were purely volume-proportional.
+    # Effective spread paid per $ of volume: ~1.2-1.6 bps from spring gross-spread
+    # revenue vs volume; up to ~3 bps if quoted 4-6 bps spread is paid half per side.
+    print("Farming cost if points ~ volume (spread only, no PnL/funding/refunds)")
+    for label, weekly_vol in (("last 7d", VARIATIONAL_VOL_7D), ("30d avg", VARIATIONAL_VOL_30D / 30 * 7)):
         vol_per_point = weekly_vol / WEEKLY_POINTS
-        for bps in (1.5, 3.0):
-            cost = vol_per_point * bps / 1e4
-            print(f"  30d vol ${vol_30d/1e9:.0f}B -> ~${vol_per_point/1e3:.0f}k volume/pt;"
-                  f" at {bps} bps effective spread ~${cost:.1f}/pt")
+        costs = "  ".join(f"{bps} bps ~${vol_per_point * bps / 1e4:5.1f}" for bps in (1.2, 1.6, 3.0))
+        print(f"  {label}: ~${vol_per_point/1e3:.0f}k volume/pt;  {costs}")
     print()
 
     if args.my_points:
