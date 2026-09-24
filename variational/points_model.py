@@ -70,6 +70,8 @@ def main() -> None:
     ap.add_argument("--my-points", type=float, default=None)
     ap.add_argument("--my-cost", type=float, default=None,
                     help="total farming cost so far in USD (spread + funding + net PnL loss - refunds)")
+    ap.add_argument("--fdv", type=float, default=None,
+                    help="your own day-1 FDV view in USD, e.g. 1e9: value per point by TGE date")
     ap.add_argument("--otc-price", type=float, default=None,
                     help="OTC/pre-market price per point (Whales-style: seller posts 100%% collateral)")
     args = ap.parse_args()
@@ -160,6 +162,19 @@ def main() -> None:
             cpp = args.my_cost / args.my_points
             be_fdv = cpp * base_pts / AIRDROP_SHARE
             print(f"  Your cost/pt ${cpp:.2f} -> break-even day-1 FDV ${be_fdv/1e9:.2f}B")
+        print()
+
+    if args.fdv:
+        print(f"Your FDV view ${args.fdv/1e9:.2f}B:")
+        for name, d, _ in TGE_DATES:
+            v = value_per_point(args.fdv, total_points(d))
+            mine = f"  -> ${v * args.my_points:,.0f} for {args.my_points:,.0f} pts" if args.my_points else ""
+            print(f"  TGE {name:15s} {total_points(d)/1e6:5.2f}M pts  ${v:5.1f}/pt{mine}")
+        if args.otc_price:
+            v = value_per_point(args.fdv, base_pts)
+            be = args.otc_price * base_pts / AIRDROP_SHARE
+            print(f"  vs OTC ${args.otc_price:.0f}: hold beats selling if day-1 FDV > ${be/1e9:.2f}B;"
+                  f" at your view hold is {v / args.otc_price - 1:+.0%} vs selling")
         print()
 
     if args.otc_price:
