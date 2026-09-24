@@ -170,6 +170,11 @@ def main() -> None:
             v = value_per_point(args.fdv, total_points(d))
             mine = f"  -> ${v * args.my_points:,.0f} for {args.my_points:,.0f} pts" if args.my_points else ""
             print(f"  TGE {name:15s} {total_points(d)/1e6:5.2f}M pts  ${v:5.1f}/pt{mine}")
+        # Circulating at TGE: 32% airdrop (100% unlocked) + possibly a slice of the 18%
+        # Ecosystem Reserve for liquidity/MM/listings; team & investors locked 12 months.
+        for extra in (0.0, 0.03, 0.08):
+            circ = AIRDROP_SHARE + extra
+            print(f"  Market cap at {circ:.0%} circulating (airdrop + {extra:.0%} reserve): ${args.fdv * circ / 1e6:,.0f}M")
         if args.otc_price:
             v = value_per_point(args.fdv, base_pts)
             be = args.otc_price * base_pts / AIRDROP_SHARE
