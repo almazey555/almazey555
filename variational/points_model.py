@@ -68,6 +68,8 @@ def main() -> None:
     ap.add_argument("--my-points", type=float, default=None)
     ap.add_argument("--my-cost", type=float, default=None,
                     help="total farming cost so far in USD (spread + funding + net PnL loss - refunds)")
+    ap.add_argument("--otc-price", type=float, default=None,
+                    help="OTC/pre-market price per point (Whales-style: seller posts 100%% collateral)")
     args = ap.parse_args()
 
     today = date(2026, 9, 24)
@@ -147,6 +149,42 @@ def main() -> None:
             cpp = args.my_cost / args.my_points
             be_fdv = cpp * base_pts / AIRDROP_SHARE
             print(f"  Your cost/pt ${cpp:.2f} -> break-even day-1 FDV ${be_fdv/1e9:.2f}B")
+        print()
+
+    if args.otc_price:
+        otc_report(args.otc_price, base_pts, args.my_points)
+
+
+def otc_report(price: float, pts: float, my_points: float | None) -> None:
+    """Sell-now-on-OTC vs hold, Whales Market style settlement.
+
+    Seller locks collateral = price. After TGE the seller either delivers tokens
+    (gets price + collateral back) or defaults (loses collateral, keeps tokens).
+    So seller ends with max(price, V - price) per point, buyer with min(V, 2*price) - price.
+    """
+    implied = price * pts / AIRDROP_SHARE
+    print(f"OTC ${price:.2f}/pt -> implied day-1 FDV ${implied/1e9:.2f}B at {pts/1e6:.2f}M points"
+          f"  (FDV/OI {implied/VARIATIONAL_OI:.2f}x)")
+    print(f"  Selling = betting value < ${price:.0f}/pt: gain (price - V), capped at +/-${price:.0f}")
+    ev_hold = ev_sell = 0.0
+    for name, fdv, p in SCENARIOS:
+        v = value_per_point(fdv, pts)
+        sell = max(price, v - price)
+        action = "deliver" if v <= 2 * price else "default"
+        ev_hold += p * v
+        ev_sell += p * sell
+        print(f"  {name:13s} V=${v:6.1f}  hold ${v:6.1f}  sell ${sell:6.1f} ({action})  diff {sell - v:+6.1f}")
+    print(f"  EV hold ${ev_hold:.1f}/pt, EV sell ${ev_sell:.1f}/pt -> selling costs ${ev_hold - ev_sell:.1f}/pt")
+    # buyer break-even price under the scenario distribution: E[min(V, 2P)] = P
+    lo, hi = 0.0, 500.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        payoff = sum(p * min(value_per_point(f, pts), 2 * mid) for _, f, p in SCENARIOS)
+        lo, hi = (mid, hi) if payoff > mid else (lo, mid)
+    print(f"  Fair OTC price under these scenarios (buyer break-even): ~${lo:.0f}/pt")
+    if my_points:
+        print(f"  For {my_points:,.0f} pts: collateral ${price * my_points:,.0f};"
+              f" expected cost of selling all ${(ev_hold - ev_sell) * my_points:,.0f}")
 
 
 if __name__ == "__main__":
